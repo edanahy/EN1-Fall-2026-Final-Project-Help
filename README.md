@@ -2,6 +2,8 @@
 
 Welcome! This repository holds **small example projects and starter code** to help you get unstuck on your EN1 final project.
 
+**Live site:** <https://edanahy.github.io/EN1-Fall-2026-Final-Project-Help/>
+
 ## What to do
 
 1. **Find the folder for your project** in the list above (in the file listing on GitHub). Your instructor will tell you which one is yours.
