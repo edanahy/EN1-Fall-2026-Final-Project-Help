@@ -89,6 +89,15 @@ Hardware is usually the **LEGO Education SPIKE Prime hub running SPIKE 3 firmwar
 - Students already know how to install and run Python on a hub (standalone), and how to connect via USB or Bluetooth (for web apps that talk to a hub). A brief reminder is enough, not a full tutorial.
 - Provide a **simulation or mock** path when the demo has a computer side, so it's testable without a hub.
 
+### One hub ↔ web page: `web-bt` (try this first)
+
+When a web page just needs to **read a hub** (motor/sensor values, `print()` output) or **start/stop/upload programs**, use LEGO's official Bluetooth protocol through the **[web-bt](web-bt/README.md)** project instead of `spikecomm`. Nothing needs installing on the hub, the hub program can run from the SPIKE App, and `file://` works in Chrome.
+
+- **Read [web-bt/PROTOCOL.md](web-bt/PROTOCOL.md)** (protocol, verified-on-hardware table) and **[web-bt/HUB_API.md](web-bt/HUB_API.md)** (SPIKE 3 Python calls) instead of fetching LEGO's `spike-prime-docs`. **Copy `web-bt/spikeble.js` into the project** (self-contained rule; its `SpikeBLE.VERSION` shows which copy is newest; if you improve the library, update the `web-bt` master and say so).
+- Hub program pattern: `print()` one clearly delimited line per reading (e.g. `<S,12,-3,0>`) every ~50 ms; page side: `hub.onReading(regex, fn)`. One `print()` arrives as two messages (text, then a bare `\r\n`), so never assume one message = one line.
+- Hub-reported device data (`setDeviceNotifications`) never signals an unplugged device; expire stale values.
+- **Use `spikecomm` instead** when you need hub-to-hub messaging, or when the page must *send* data into a running hub program (the official protocol has no documented way to do that). It comes with REPL-only start and an `mpremote` install, as described below.
+
 ### Multi-hub projects: `spikecomm`
 
 For hub-to-hub (or hub-to-web-page) communication, use the custom library **[`spikecomm`](https://github.com/edanahy/spikecomm)** (single file `spikecomm.py`, v1.2.0 when this was written). Students know how to add it to their hubs. **Read the library's README (and its `examples/` folder) before using it. Don't rely on this summary for API details.** Key facts:
@@ -98,7 +107,7 @@ For hub-to-hub (or hub-to-web-page) communication, use the custom library **[`sp
 - Install onto each hub with `mpremote cp spikecomm.py :spikecomm.py` over USB, with the SPIKE App closed. Document that step (or link the spikecomm README) in each project that uses it. Copy `spikecomm.py` into the project folder so it is self-contained.
 - Do **not** use the `bluetooth` module directly alongside spikecomm (can freeze the hub).
 - Limits to design around: beacon payload ≈ 24 characters, latest-value only; direct messages ≤ 1000 chars, no newlines; keep callbacks short; a hub can be a Beacon *or* a Peripheral, not both.
-- Web Bluetooth (and Web Serial) works in Chrome, Edge, and other Chromium-based browsers only (not Safari/Firefox/iOS) and needs a secure context, so such web demos may need `localhost` or GitHub Pages instead of `file://`. Students already know this, so just put a **one-line reminder** ("Use Chrome, Edge, or another Chromium browser") in the README. No lecture.
+- Web Bluetooth (and Web Serial) works in Chrome, Edge, and other Chromium-based browsers only (not Safari/Firefox/iOS) and needs a secure context, so such web demos may need `localhost` or GitHub Pages instead of `file://` (for the official SPIKE protocol via `web-bt`/`spikeble.js`, `file://` has been confirmed working in Chrome). Students already know this, so just put a **one-line reminder** ("Use Chrome, Edge, or another Chromium browser") in the README. No lecture.
 
 ## GitHub Pages and the root index.html
 
@@ -179,7 +188,11 @@ The instructor expects some of these rules to collide with reality as examples g
 
 ## Project index
 
+Each entry says whether it has been tested on real hardware, so say so when you add one ("Tested on a real hub" / "Not yet tested on hardware").
+
 <!-- One line per project: - [folder](./folder/) — description — stack / architecture rung -->
 
 - **[fish-aquarium](fish-aquarium/README.md)**: Rung 3 (browser + Flask back-end). Webcam capture → Python → OpenAI `images.edit` (transparent cutout) → fish swims in a JS aquarium. Has mock mode (Pillow flood-fill, no key). Needs instructor-issued OpenAI key for AI mode. No hardware (SPIKE control left to students).
 - **[claw-machine](claw-machine/README.md)**: Rung 1 (pure browser, `file://` works; MediaPipe loaded from jsDelivr CDN, so needs internet). Webcam → MediaPipe PoseLandmarker → body position (thirds) + arm angle → fake `robot.*` calls printed to an on-page console. Video and overlay share one canvas to avoid alignment/scaling bugs. No key, no Python, no hardware; `robot.js` is the swap point for a real robot.
+- **[web-bt](web-bt/README.md)**: Rung 1 (pure browser, Chrome/Edge Web Bluetooth). **Reference for talking to a SPIKE Prime hub (SPIKE App 3) from a web page without a custom hub library**: `PROTOCOL.md` (GATT UUIDs, COBS framing, messages, console/device notifications, program upload, test vectors; use this instead of re-reading LEGO's `spike-prime-docs`) and `spikeble.js` (one-file client, Node-tested; copy it into new projects). `HUB_API.md` (hub-side Python calls) and `hub.onReading()` helper. Demo page shows live `print()` output, device data (with stale-row expiry), start/stop/upload. **Tested on a real hub** (firmware 1.8.149, from `file://`); two-hub use and `TunnelMessage` not yet tried.
+- **[tabletop-arena](tabletop-arena/README.md)**: Rung 1 (pure browser + Web Bluetooth; no Python). SPIKE hub (`hub_stream.py`: motor A move, motor B aim, force sensor C fire, printed as `<S,a,b,f>`) → `spikeble.js` → calibration screen → vector asteroid game that fills the whole window (one player, code ready for four sides), a **Rotate screen** button for upside-down/other-side viewing, menu bar that auto-hides on the play screen. Keyboard mode when no hub. Tested with a real hub.

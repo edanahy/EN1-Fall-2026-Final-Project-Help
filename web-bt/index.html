@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>web-bt: SPIKE Prime Bluetooth demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 56rem; margin: 1rem auto; padding: 0 1rem; line-height: 1.4; }
+    h2 { margin-top: 1.6rem; border-bottom: 1px solid #ccc; }
+    button, input { font-size: 1rem; padding: 0.3rem 0.7rem; }
+    pre, textarea { background: #f4f4f4; border: 1px solid #ccc; padding: 0.5rem; width: 100%; box-sizing: border-box; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; }
+    pre { height: 10rem; overflow: auto; margin: 0.3rem 0; white-space: pre-wrap; }
+    table { border-collapse: collapse; }
+    td, th { border: 1px solid #ccc; padding: 0.2rem 0.6rem; text-align: left; }
+    #status { font-weight: bold; }
+    .small { color: #555; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>SPIKE Prime &harr; web page (Bluetooth)</h1>
+  <p class="small">Use Chrome, Edge, or another Chromium browser. Close the SPIKE App first (the hub can only talk to one thing at a time),
+     and turn the hub on.</p>
+
+  <p>
+    <button id="connectBtn">Connect to hub</button>
+    <button id="disconnectBtn" disabled>Disconnect</button>
+    <span id="status">Not connected</span>
+  </p>
+  <div id="infoBox" class="small"></div>
+  <div class="small">spikeble.js version <span id="libVersion"></span></div>
+
+  <!-- ============ 1. Console: print() output from a running hub program ============ -->
+  <h2>1. Console output (what your hub program <code>print()</code>s)</h2>
+  <p class="small">Start a program on the hub (section 3) and its <code>print()</code> text shows up here.
+     Left box = each Bluetooth message exactly as received (<code>\n</code> shown visibly).
+     Right box = the same text cut into complete lines.</p>
+  <div style="display:flex; gap:0.5rem">
+    <pre id="rawLog"></pre>
+    <pre id="lineLog"></pre>
+  </div>
+
+  <!-- ============ 2. Device notifications: live sensor data, no program needed ============ -->
+  <h2>2. Live device data (no program needed)</h2>
+  <p class="small">The hub can push its own readings (battery, motors, force/color/distance sensors, tilt) at an interval you choose.
+     Plug a motor or sensor into any port and watch the table.</p>
+  <p>
+    Every <input id="intervalMs" type="number" value="100" min="20" max="5000" style="width:5rem"> ms
+    <button id="devOnBtn" disabled>Start</button>
+    <button id="devOffBtn" disabled>Stop</button>
+  </p>
+  <table id="devTable"><tr><th>What</th><th>Values</th></tr></table>
+
+  <!-- ============ 3. Program control ============ -->
+  <h2>3. Start / stop / upload a hub program</h2>
+  <p>
+    Slot (0&ndash;19): <input id="slot" type="number" value="0" min="0" max="19" style="width:4rem">
+    <button id="startBtn" disabled>Start program in slot</button>
+    <button id="stopBtn" disabled>Stop</button>
+  </p>
+  <p class="small">Or upload this Python code into the slot and run it (needs no SPIKE App at all). <em>Upload is untested on real hardware, see README.</em></p>
+  <textarea id="source" rows="9">import runloop
+from hub import port
+import motor
+
+async def main():
+    # Print the motor on port A's position 5 times a second.
+    while True:
+        print("pos", motor.relative_position(port.A))
+        await runloop.sleep_ms(200)
+
+runloop.run(main())
+</textarea>
+  <p><button id="uploadBtn" disabled>Upload to slot &amp; run</button> <span id="uploadMsg" class="small"></span></p>
+
+  <script src="spikeble.js"></script>
+  <script>
+    // ---- Create the hub object and wire up the events (the whole "API") -------
+    const hub = new SpikeBLE.SpikeHub();
+    const $ = (id) => document.getElementById(id);
+
+    // A print() from the hub program arrives as "console" (raw chunk) and "line" (whole lines).
+    hub.on("console", (text) => append($("rawLog"), JSON.stringify(text)));
+    hub.on("line",    (line) => append($("lineLog"), line));
+
+    // Device notifications arrive as an array of records: {kind:"motor", port:"A", position:..}
+    // The hub only reports devices that are plugged in right now, and never says "removed".
+    // So WE must notice when a row stops updating (unplugged / hot-swapped) and drop it.
+    const deviceRows = {};   // one entry per thing, e.g. "motor A": { tr, cell, lastSeen }
+    hub.on("device", (records) => {
+      for (const r of records) {
+        const key = r.port ? `${r.kind} ${r.port}` : r.kind;
+        const copy = { ...r }; delete copy.kind; delete copy.port;
+        showRow(key, JSON.stringify(copy));
+      }
+    });
+
+    hub.on("programflow", (action) => append($("lineLog"), `[program ${action}ed]`));
+    hub.on("disconnect",  () => { setConnected(false); clearRows(); });
+
+    $("libVersion").textContent = SpikeBLE.VERSION;
+
+    // ---- Buttons --------------------------------------------------------------
+    $("connectBtn").onclick = async () => {          // Web Bluetooth needs a click to start
+      try {
+        $("status").textContent = "Connecting...";
+        const info = await hub.connect();
+        setConnected(true);
+        $("infoBox").textContent = `Firmware ${info.firmwareVersion}, protocol ${info.rpcVersion}, ` +
+          `max packet ${info.maxPacketSize} B, max chunk ${info.maxChunkSize} B`;
+      } catch (e) { setConnected(false); $("status").textContent = "Error: " + e.message; }
+    };
+    $("disconnectBtn").onclick = () => hub.disconnect();
+    $("devOnBtn").onclick  = () => hub.setDeviceNotifications(Number($("intervalMs").value)).catch(report);
+    $("devOffBtn").onclick = () => { hub.setDeviceNotifications(0).catch(report); clearRows(); };
+    $("startBtn").onclick  = () => hub.startProgram(Number($("slot").value)).catch(report);
+    $("stopBtn").onclick   = () => hub.stopProgram(Number($("slot").value)).catch(report);
+    $("uploadBtn").onclick = async () => {
+      try {
+        await hub.uploadProgram($("source").value, Number($("slot").value), {
+          onProgress: (done, total) => $("uploadMsg").textContent = `Uploading ${done}/${total} bytes`,
+        });
+        $("uploadMsg").textContent = "Uploaded and started.";
+      } catch (e) { report(e); }
+    };
+
+    // ---- Small UI helpers -------------------------------------------------------
+    function setConnected(on) {
+      $("status").textContent = on ? "Connected" : "Not connected";
+      $("connectBtn").disabled = on;
+      for (const id of ["disconnectBtn", "devOnBtn", "devOffBtn", "startBtn", "stopBtn", "uploadBtn"]) $(id).disabled = !on;
+      if (!on) $("infoBox").textContent = "";
+    }
+    function append(pre, text) {                     // add a line, keep the last ~200
+      pre.textContent += text + "\n";
+      const lines = pre.textContent.split("\n");
+      if (lines.length > 200) pre.textContent = lines.slice(-200).join("\n");
+      pre.scrollTop = pre.scrollHeight;
+    }
+    function showRow(key, text) {
+      if (!deviceRows[key]) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${key}</td><td></td>`;
+        $("devTable").appendChild(tr);
+        deviceRows[key] = { tr, cell: tr.children[1], lastSeen: 0 };
+      }
+      deviceRows[key].cell.textContent = text;
+      deviceRows[key].lastSeen = Date.now();
+    }
+    function clearRows() {
+      for (const key of Object.keys(deviceRows)) { deviceRows[key].tr.remove(); delete deviceRows[key]; }
+    }
+    // Every half second: remove rows not updated for 3 update-intervals (at least 1.5 s).
+    setInterval(() => {
+      const maxAge = Math.max(1500, 3 * Number($("intervalMs").value || 100));
+      for (const key of Object.keys(deviceRows)) {
+        if (Date.now() - deviceRows[key].lastSeen > maxAge) { deviceRows[key].tr.remove(); delete deviceRows[key]; }
+      }
+    }, 500);
+    function report(e) { $("uploadMsg").textContent = "Error: " + e.message; console.error(e); }
+  </script>
+</body>
+</html>
