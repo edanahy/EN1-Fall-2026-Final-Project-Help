@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>web-bt: two SPIKE hubs on one page</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1rem auto; padding: 0 1rem; max-width: 90rem; line-height: 1.4; }
+    #panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr)); gap: 1rem; }
+    .panel { border: 1px solid #aaa; border-radius: 6px; padding: 0.7rem 1rem; }
+    .panel h2 { margin: 0 0 0.5rem; }
+    button, input { font-size: 1rem; padding: 0.3rem 0.7rem; }
+    pre { background: #f4f4f4; border: 1px solid #ccc; padding: 0.4rem; height: 8rem; overflow: auto; margin: 0.3rem 0;
+          font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; white-space: pre-wrap; }
+    table { border-collapse: collapse; margin-top: 0.3rem; }
+    td, th { border: 1px solid #ccc; padding: 0.15rem 0.5rem; text-align: left; font-size: 0.85rem; }
+    .status { font-weight: bold; }
+    .small { color: #555; font-size: 0.85rem; }
+    .warn { color: #b00; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>Two SPIKE hubs, one web page</h1>
+  <p class="small">Use Chrome or Edge. Close the SPIKE App first. Click <strong>Connect</strong> in each panel and pick a <em>different</em> hub each time
+     (tip: give your hubs different names first so you can tell them apart in the picker).
+     Each panel is its own <code>SpikeBLE.SpikeHub</code> object, so the two hubs never share data.
+     The "msgs/s" number in each panel shows how many Bluetooth messages per second that hub is delivering (handy for spotting lag).
+     Tested with two real hubs from <code>file://</code>; more than two has not been tried.</p>
+  <div id="panels"></div>
+
+  <script src="spikeble.js"></script>
+  <script>
+    // ---- Settings ---------------------------------------------------------------
+    const HUB_COUNT = 2;               // change to 4 for a four-player table (the page builds that many panels)
+    const DEVICE_INTERVAL_MS = 100;    // how often a hub pushes its own motor/sensor data when you press "Start" below
+
+    // Everything one hub needs lives in one panel. To use another hub, we just call makePanel() again.
+    const panels = [];
+
+    function makePanel(number) {
+      const root = document.createElement("div");
+      root.className = "panel";
+      root.innerHTML = `
+        <h2>Hub ${number}</h2>
+        <p>
+          <button class="connect">Connect</button>
+          <button class="disconnect" disabled>Disconnect</button>
+          <span class="status">Not connected</span>
+        </p>
+        <p class="small">Hub name: <strong class="name">-</strong> &nbsp; <span class="rate">0</span> msgs/s
+           <span class="small">(each <code>print()</code> counts as 2)</span> <span class="warn"></span></p>
+        <p>
+          Program slot <input class="slot" type="number" value="0" min="0" max="19" style="width:4rem">
+          <button class="start" disabled>Start program</button>
+          <button class="stop" disabled>Stop program</button>
+        </p>
+        <div class="small">What the hub's program <code>print()</code>s:</div>
+        <pre class="lines"></pre>
+        <div class="small">Hub's own device data (no program needed):
+          <button class="devOn" disabled>Start</button> <button class="devOff" disabled>Stop</button></div>
+        <table class="devTable"><tr><th>What</th><th>Values</th></tr></table>`;
+      document.getElementById("panels").appendChild(root);
+      const $ = (selector) => root.querySelector(selector);       // only looks inside THIS panel
+
+      const hub = new SpikeBLE.SpikeHub();                        // one hub object per panel
+      const panel = { number, hub, root };
+      let messageCount = 0;                                       // for the msgs/s display
+      const rows = {};                                            // device table rows: key -> { tr, cell, lastSeen }
+
+      // ---- events from THIS hub only ----
+      hub.on("message", () => { messageCount++; });
+      hub.on("line", (line) => append($(".lines"), line));
+      hub.on("device", (records) => {
+        for (const r of records) {
+          const key = r.port ? `${r.kind} ${r.port}` : r.kind;
+          const copy = { ...r }; delete copy.kind; delete copy.port;
+          showRow(key, JSON.stringify(copy));
+        }
+      });
+      hub.on("disconnect", () => { setConnected(false); clearRows(); });
+
+      // ---- buttons ----
+      $(".connect").onclick = async () => {
+        try {
+          $(".status").textContent = "Connecting...";
+          await hub.connect();                                    // opens the browser's picker
+          setConnected(true);
+          $(".name").textContent = hub.device.name || "(no name)";
+          warnIfDuplicate();
+        } catch (e) { setConnected(false); $(".status").textContent = "Error: " + e.message; }
+      };
+      $(".disconnect").onclick = () => hub.disconnect();
+      $(".start").onclick = () => hub.startProgram(Number($(".slot").value)).catch(report);
+      $(".stop").onclick  = () => hub.stopProgram(Number($(".slot").value)).catch(report);
+      $(".devOn").onclick  = () => hub.setDeviceNotifications(DEVICE_INTERVAL_MS).catch(report);
+      $(".devOff").onclick = () => { hub.setDeviceNotifications(0).catch(report); clearRows(); };
+
+      // ---- helpers ----
+      function setConnected(on) {
+        $(".status").textContent = on ? "Connected" : "Not connected";
+        $(".connect").disabled = on;
+        for (const c of [".disconnect", ".start", ".stop", ".devOn", ".devOff"]) $(c).disabled = !on;
+        if (!on) { $(".name").textContent = "-"; $(".warn").textContent = ""; }
+      }
+      function report(e) { $(".warn").textContent = "Error: " + e.message; console.error(e); }
+      function warnIfDuplicate() {   // picking the same physical hub in two panels would confuse everything
+        const same = panels.find((p) => p !== panel && p.hub.device && p.hub.device.id === hub.device.id);
+        $(".warn").textContent = same ? `This is the same hub as Hub ${same.number}! Disconnect and pick a different one.` : "";
+      }
+      function append(pre, text) {                                // keep only the last ~100 lines
+        pre.textContent += text + "\n";
+        const lines = pre.textContent.split("\n");
+        if (lines.length > 100) pre.textContent = lines.slice(-100).join("\n");
+        pre.scrollTop = pre.scrollHeight;
+      }
+      function showRow(key, text) {
+        if (!rows[key]) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${key}</td><td></td>`;
+          $(".devTable").appendChild(tr);
+          rows[key] = { tr, cell: tr.children[1], lastSeen: 0 };
+        }
+        rows[key].cell.textContent = text;
+        rows[key].lastSeen = Date.now();
+      }
+      function clearRows() { for (const k of Object.keys(rows)) { rows[k].tr.remove(); delete rows[k]; } }
+
+      // Once a second: update the msgs/s number, and drop device rows that stopped updating
+      // (the hub never says "unplugged", so we have to notice that ourselves).
+      setInterval(() => {
+        $(".rate").textContent = messageCount;
+        messageCount = 0;
+        for (const k of Object.keys(rows)) {
+          if (Date.now() - rows[k].lastSeen > Math.max(1500, 3 * DEVICE_INTERVAL_MS)) { rows[k].tr.remove(); delete rows[k]; }
+        }
+      }, 1000);
+
+      panel.setConnected = setConnected;
+      panels.push(panel);
+      return panel;
+    }
+
+    for (let i = 1; i <= HUB_COUNT; i++) makePanel(i);
+  </script>
+</body>
+</html>

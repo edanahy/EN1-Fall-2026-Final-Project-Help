@@ -30,6 +30,7 @@ A web page that connects to a LEGO SPIKE Prime hub with Bluetooth (Web Bluetooth
 
 1. Open `index.html` (double-click it, or serve the folder as described above).
 2. Click **Connect to hub**, choose your hub in the browser's picker.
+   (Two hubs at once? Open `twohubs.html` instead: one panel per hub, each with its own Connect and Start/Stop program buttons.)
 3. Try each section:
    - **Live device data:** plug a motor into a port, click **Start**, turn the motor.
    - **Console output:** put a program that prints into a slot with the SPIKE App (re-open the page after closing the App), enter the slot number, click **Start program in slot**. Or use **Upload to slot & run**.
@@ -52,12 +53,12 @@ A web page that connects to a LEGO SPIKE Prime hub with Bluetooth (Web Bluetooth
   See `tabletop-arena` for a complete example that turns printed numbers into game controls, and [HUB_API.md](HUB_API.md) for the hub side.
 - Use the `"device"` event for ready-made readings (no hub program required), for example a motor's `position` to drive an on-screen slider.
 - Send data **to** the hub program: not covered here (the docs describe a generic `TunnelMessage`, but its use is undocumented). If you need that today, look at `spikecomm` (PROTOCOL.md section 6).
-- Connect two or more hubs: create one `new SpikeBLE.SpikeHub()` per hub (untested).
+- Connect two or more hubs: see [twohubs.html](twohubs.html), which makes one `new SpikeBLE.SpikeHub()` per hub (change `HUB_COUNT` for more). Tested with two real hubs; a four-player table (four hubs) has not been tried yet.
 
 ## Left out on purpose / limitations
 
-- Tested on a real hub (firmware 1.8.149): connecting, `print()` output, live device data, program start/stop/upload. Not tried: renaming the hub, `TunnelMessage`, more than one hub at a time. See the verification table in [PROTOCOL.md](PROTOCOL.md).
-- No reconnect logic, no multi-hub, no firmware update, no hub renaming UI.
+- Tested on a real hub (firmware 1.8.149): connecting, `print()` output, live device data, program start/stop/upload. Two hubs at once also work (`twohubs.html`, from `file://`). Not tried: renaming the hub, `TunnelMessage`, more than two hubs. See the verification table in [PROTOCOL.md](PROTOCOL.md).
+- No reconnect logic, no firmware update, no hub renaming UI. Hubs are not auto-reconnected: after a disconnect, click Connect again and re-pick the hub.
 
 ## Troubleshooting
 

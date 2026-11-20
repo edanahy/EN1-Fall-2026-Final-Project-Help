@@ -19,6 +19,7 @@ A self-contained summary of how a **web page talks to a LEGO Education SPIKE Pri
 | `ProgramFlowRequest` start/stop from the page | **Confirmed** (used by `tabletop-arena` and the demo page) |
 | Device notifications (section 4) | **Confirmed** with the demo page: live motor/sensor data streams. **Hot-swap:** newly plugged devices appear, but the hub never reports an *unplugged* device, so a client that doesn't expire old values shows stale data (the demo page now expires rows) |
 | Program upload (ClearSlot, StartFileUpload, TransferChunk) | Reported working by the instructor using the demo page ("everything worked") |
+| Two hubs connected to one page | **Confirmed** with `twohubs.html` from `file://`: both connected through separate picker clicks and streamed independently with correct per-hub labeling (simulated-hub tests also checked that commands and data stay in the right panel). Three or more hubs, and sustained-load behavior, not yet tried |
 | `getHubName`, `setHubName`, `TunnelMessage`, `DeviceUuid` | Not tried on a real hub |
 
 **Observed InfoResponse (real hub, 2026-11-20):** firmware `1.8.149`, protocol (RPC) `1.0.47`, `max_packet_size` = 182 bytes, `max_chunk_size` = 4096 bytes. If something misbehaves, the demo page's raw console box and `hub.on("message", ...)` show exactly what the hub sent.
