@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fish Aquarium</title>
+
+  <style>
+    /* ---------- LAYOUT: top half = camera, bottom half = aquarium ---------- */
+    html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+    body { display: grid; grid-template-rows: 1fr 1fr; }   /* two equal rows */
+
+    #camera-panel {
+      background: #222; color: white;
+      display: flex; align-items: center; justify-content: center; gap: 1.5rem;
+      padding: 0.5rem; min-height: 0;
+    }
+    #video { height: 90%; max-width: 60%; background: black; border-radius: 6px; }
+    #controls { display: flex; flex-direction: column; gap: 0.6rem; max-width: 16rem; }
+    button { font-size: 1.1rem; padding: 0.6rem 1.2rem; cursor: pointer; }
+    #status { font-size: 0.9rem; min-height: 2.6em; }
+
+    /* The aquarium: a blue rectangle. Fish are placed INSIDE it (position: absolute). */
+    #aquarium { position: relative; overflow: hidden; background: linear-gradient(#4fc3f7, #01579b); }
+    /* top/left 0 = start in the corner; JavaScript then moves each fish with transform. */
+    .fish { position: absolute; top: 0; left: 0; height: 90px; pointer-events: none; }  /* fish size: change here */
+  </style>
+</head>
+
+<body>
+  <!-- TOP HALF: live camera -->
+  <div id="camera-panel">
+    <video id="video" autoplay playsinline muted></video>
+    <div id="controls">
+      <button id="capture-btn" disabled>📷 Capture fish</button>
+      <div id="status">Starting camera…</div>
+    </div>
+  </div>
+
+  <!-- BOTTOM HALF: the aquarium -->
+  <div id="aquarium"></div>
+
+  <!-- A hidden canvas used to "freeze" one frame of the video -->
+  <canvas id="canvas" hidden></canvas>
+
+  <script>
+    // ---------- SETTINGS (change these) ----------
+    const MAX_PHOTO_WIDTH = 1024;   // shrink the photo before sending (smaller = faster upload)
+    const FISH_MIN_SPEED = 1;       // pixels per frame
+    const FISH_MAX_SPEED = 3;
+    const FISH_DRAWN_FACING_RIGHT = false;   // true if fish facing RIGHT; false if fish facing LEFT
+
+    const video = document.getElementById("video");
+    const canvas = document.getElementById("canvas");
+    const captureBtn = document.getElementById("capture-btn");
+    const statusText = document.getElementById("status");
+    const aquarium = document.getElementById("aquarium");
+
+    // =====================================================================
+    // STEP 1: Show the live camera
+    // getUserMedia asks the browser for the camera (the user must click "Allow").
+    // It only works on https:// pages or on http://localhost, not on file://.
+    // =====================================================================
+    async function startCamera() {
+      // If the page was opened by double-clicking the file, the Python server isn't involved.
+      if (location.protocol === "file:") {
+        statusText.textContent = "Open this page through the Python server: http://localhost:8000 (see README).";
+        return;
+      }
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;               // the <video> tag now shows the camera
+        captureBtn.disabled = false;
+        statusText.textContent = "Hold your fish drawing up to the camera, then click Capture.";
+      } catch (err) {
+        statusText.textContent = "Could not open the camera: " + err.message;
+      }
+    }
+
+    // =====================================================================
+    // STEP 2: Capture one frame
+    // Draw the current video frame onto a hidden <canvas>, then turn the canvas into
+    // a "data URL": the picture written out as text, so we can send it to Python.
+    // =====================================================================
+    function captureFrame() {
+      const scale = Math.min(1, MAX_PHOTO_WIDTH / video.videoWidth);
+      canvas.width = video.videoWidth * scale;
+      canvas.height = video.videoHeight * scale;
+      canvas.getContext("2d").drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.9);   // JPEG, 90% quality
+    }
+
+    // =====================================================================
+    // STEP 3: Send it to the Python server and wait for the fish PNG
+    // fetch() sends an HTTP request. We POST JSON to "/api/make-fish" (see app.py).
+    // =====================================================================
+    async function makeFish() {
+      captureBtn.disabled = true;
+      statusText.textContent = "Sending your drawing… (this can take 20+ seconds)";
+      try {
+        const response = await fetch("/api/make-fish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: captureFrame() }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Server error");
+
+        addFishToAquarium(result.image);        // result.image is a transparent PNG data URL
+        statusText.textContent = "Fish added! Capture another one.";
+      } catch (err) {
+        statusText.textContent = "Something went wrong: " + err.message;
+      }
+      captureBtn.disabled = false;
+    }
+
+    // =====================================================================
+    // STEP 4: Put the fish in the aquarium and make it swim
+    // Each fish is an <img> placed with position:absolute inside the blue box.
+    // Every animation frame we nudge its x/y; at a wall we reverse direction.
+    // To control fish from a SPIKE hub later: change fish.vx / fish.vy from your own code.
+    // =====================================================================
+    const fishes = [];   // every fish in the tank
+
+    function addFishToAquarium(pngDataUrl) {
+      const img = document.createElement("img");
+      img.className = "fish";
+      img.src = pngDataUrl;
+      aquarium.appendChild(img);
+
+      // Wait until the image has loaded so we know how big it is.
+      img.onload = () => {
+        const fish = {
+          img: img,
+          x: Math.random() * (aquarium.clientWidth - img.width),
+          y: Math.random() * (aquarium.clientHeight - img.height),
+          vx: randomSpeed(),   // horizontal speed (pixels per frame)
+          vy: randomSpeed(),   // vertical speed
+        };
+        fishes.push(fish);
+      };
+    }
+
+    function randomSpeed() {
+      const speed = FISH_MIN_SPEED + Math.random() * (FISH_MAX_SPEED - FISH_MIN_SPEED);
+      return Math.random() < 0.5 ? -speed : speed;   // random direction
+    }
+
+    function animate() {
+      for (const fish of fishes) {
+        fish.x += fish.vx;
+        fish.y += fish.vy;
+
+        const maxX = aquarium.clientWidth - fish.img.width;
+        const maxY = aquarium.clientHeight - fish.img.height;
+
+        // Bounce off the walls
+        if (fish.x < 0)    { fish.x = 0;    fish.vx = Math.abs(fish.vx); }
+        if (fish.x > maxX) { fish.x = maxX; fish.vx = -Math.abs(fish.vx); }
+        if (fish.y < 0)    { fish.y = 0;    fish.vy = Math.abs(fish.vy); }
+        if (fish.y > maxY) { fish.y = maxY; fish.vy = -Math.abs(fish.vy); }
+
+        // Move the image. scaleX(-1) mirrors it, so the fish faces the way it swims.
+        const movingLeft = fish.vx < 0;
+        const flip = (movingLeft === FISH_DRAWN_FACING_RIGHT) ? -1 : 1;
+        fish.img.style.transform = `translate(${fish.x}px, ${fish.y}px) scaleX(${flip})`;
+      }
+      requestAnimationFrame(animate);   // ask the browser to call us again for the next frame
+    }
+
+    // ---------- Start everything ----------
+    captureBtn.addEventListener("click", makeFish);
+    startCamera();
+    animate();
+
+    // Ask the server whether it is in mock mode, and tell the student.
+    fetch("/api/status").then(r => r.json()).then(s => {
+      aquarium.title = s.mock ? "Server is in MOCK mode (no AI)" : "AI model: " + s.model;
+      if (s.mock) {
+        const note = document.createElement("div");
+        note.textContent = "MOCK mode: simple white-paper cutout, no AI";
+        note.style.cssText = "position:absolute; right:8px; bottom:6px; color:white; opacity:0.7; font-size:0.8rem";
+        aquarium.appendChild(note);
+      }
+    }).catch(() => {});
+  </script>
+</body>
+</html>

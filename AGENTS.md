@@ -181,4 +181,4 @@ The instructor expects some of these rules to collide with reality as examples g
 
 <!-- One line per project: - [folder](./folder/) — description — stack / architecture rung -->
 
-_(none yet)_
+- **[fish-aquarium](fish-aquarium/README.md)**: Rung 3 (browser + Flask back-end). Webcam capture → Python → OpenAI `images.edit` (transparent cutout) → fish swims in a JS aquarium. Has mock mode (Pillow flood-fill, no key). Needs instructor-issued OpenAI key for AI mode. No hardware (SPIKE control left to students).
