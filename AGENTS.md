@@ -182,3 +182,4 @@ The instructor expects some of these rules to collide with reality as examples g
 <!-- One line per project: - [folder](./folder/) — description — stack / architecture rung -->
 
 - **[fish-aquarium](fish-aquarium/README.md)**: Rung 3 (browser + Flask back-end). Webcam capture → Python → OpenAI `images.edit` (transparent cutout) → fish swims in a JS aquarium. Has mock mode (Pillow flood-fill, no key). Needs instructor-issued OpenAI key for AI mode. No hardware (SPIKE control left to students).
+- **[claw-machine](claw-machine/README.md)**: Rung 1 (pure browser, `file://` works; MediaPipe loaded from jsDelivr CDN, so needs internet). Webcam → MediaPipe PoseLandmarker → body position (thirds) + arm angle → fake `robot.*` calls printed to an on-page console. Video and overlay share one canvas to avoid alignment/scaling bugs. No key, no Python, no hardware; `robot.js` is the swap point for a real robot.

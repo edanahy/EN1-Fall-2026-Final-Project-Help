@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claw Machine: Pose Control Demo</title>
+  <link rel="icon" href="data:,"> <!-- empty icon: stops the browser asking for favicon.ico -->
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 62rem; margin: 1rem auto; padding: 0 1rem; line-height: 1.4; }
+    /* The canvas holds the picture at the camera's real size (set in app.js).
+       CSS only scales it, as one image, keeping its shape (height: auto). */
+    #view { display: block; width: 100%; height: auto; background: #222; }
+    #readout { font-family: monospace; margin: 0.5rem 0; }
+    #console { background: #111; color: #7CFC7C; font-size: 0.9rem; height: 10rem; overflow-y: auto; padding: 0.5rem; margin: 0; }
+    /* The camera <video> is only a frame source; keep it in the page but invisible. */
+    #cam { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <h1>Claw Machine: Pose Control Demo</h1>
+  <p>Stand in the left / middle / right third of the picture to move the (pretend) robot.
+     Raise both hands above your head: arms wide = open claw, hands together = close claw.</p>
+
+  <p><button id="start">Start camera</button> <span id="status">Click the button to begin.</span></p>
+
+  <video id="cam" playsinline muted></video>
+  <canvas id="view" width="1280" height="720"></canvas>
+  <div id="readout">&nbsp;</div>
+
+  <h2>Robot console</h2>
+  <pre id="console"></pre>
+
+  <!-- MediaPipe, loaded from a CDN (needs internet). Gives us the global `Vision`. -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.2.3/vision_bundle.js"></script>
+  <!-- Our code. Order matters: each file uses things defined by the ones above it. -->
+  <script src="robot.js"></script>
+  <script src="pose-logic.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
