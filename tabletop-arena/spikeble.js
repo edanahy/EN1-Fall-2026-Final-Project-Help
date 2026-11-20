@@ -11,6 +11,9 @@
  *       connectButton.onclick = () => hub.connect();   // must be a button click!
  *     </script>
  *
+ * Version 1.1.0 (see SpikeBLE.VERSION). The master copy lives in the web-bt
+ * project; other projects keep their own copy, so compare versions to spot an old one.
+ *
  * Protocol source: https://lego.github.io/spike-prime-docs/  (see PROTOCOL.md
  * in this folder for a plain-English summary of everything used below).
  *
@@ -26,6 +29,8 @@
 "use strict";
 
 const SpikeBLE = (() => {
+
+  const VERSION = "1.1.0";
 
   // ==========================================================================
   // 1. CONSTANTS
@@ -291,7 +296,8 @@ const SpikeBLE = (() => {
   // 4. SpikeHub : the Bluetooth part
   // ==========================================================================
   // Events you can subscribe to with hub.on(name, fn):
-  //   "console"     (text)      raw text of one ConsoleNotification (a print() from the hub)
+  //   "console"     (text)      raw text of one ConsoleNotification (a print() from the hub).
+  //                             NOTE: one print() arrives as TWO of these: the text, then a lone "\r\n".
   //   "line"        (line)      same text, but re-assembled into complete lines
   //   "device"      (records)   array of {kind:"motor"|"force"|"battery"|...} objects
   //   "programflow" (action)    "start" or "stop"
@@ -309,6 +315,7 @@ const SpikeBLE = (() => {
       this._rxBuffer = [];            // bytes received but not yet a whole frame
       this._lineBuffer = "";          // console text not yet a whole line
       this._pending = [];             // requests waiting for a response
+      this._readers = [];             // onReading() subscriptions
       this._writeChain = Promise.resolve();   // BLE writes must happen one at a time
     }
 
@@ -323,6 +330,8 @@ const SpikeBLE = (() => {
         filters: [{ services: [SERVICE_UUID] }],     // only show SPIKE hubs
         optionalServices: [SERVICE_UUID],
       });
+      this._rxBuffer = []; this._lineBuffer = "";     // forget leftovers from any earlier connection
+      for (const r of this._readers) r.text = "";
       this.device.addEventListener("gattserverdisconnected", () => this._emit("disconnect"));
       const server  = await this.device.gatt.connect();
       const service = await server.getPrimaryService(SERVICE_UUID);
@@ -341,19 +350,39 @@ const SpikeBLE = (() => {
 
     disconnect() { if (this.connected) this.device.gatt.disconnect(); }
 
+    /**
+     * Turn printed text into numbers. Give a regular expression with one capture group per
+     * number; `fn` is called with an array of Numbers for every complete match.
+     *
+     *     // hub program does: print("<S,{},{},{}>".format(a, b, c))
+     *     hub.onReading(/<S,(-?\d+),(-?\d+),(-?\d+)>/, ([a, b, c]) => { ... });
+     *
+     * It copes with text split across messages and with the stray "\r\n" messages, because
+     * it keeps its own buffer and only looks for complete matches. Wrapping each reading in
+     * markers (the < > above) is what makes that reliable. Captures that are not numbers
+     * become NaN. If several readings arrive at once, `fn` is called once for each, in order.
+     */
+    onReading(regex, fn) {
+      const reader = { re: new RegExp(regex.source, "g"), fn, text: "" };
+      this._readers.push(reader);
+      return this;
+    }
+
     // ---- sending -----------------------------------------------------------
     /** Frame a message and write it to the hub, split to max_packet_size. */
     send(message) {
+      if (!this.rx || !this.connected) return Promise.reject(new Error("Not connected to a hub"));
       const frame = pack(message);
       const size = this.maxPacketSize;
-      this._writeChain = this._writeChain.then(async () => {
+      const result = this._writeChain.then(async () => {
         for (let i = 0; i < frame.length; i += size) {
           const piece = frame.slice(i, i + size);
           if (this.rx.writeValueWithoutResponse) await this.rx.writeValueWithoutResponse(piece);
           else await this.rx.writeValue(piece);
         }
       });
-      return this._writeChain;
+      this._writeChain = result.catch(() => {});   // one failed write must not break every later write
+      return result;
     }
 
     /** Send a message and wait for the response with message ID `responseId`. */
@@ -418,6 +447,20 @@ const SpikeBLE = (() => {
       }
     }
 
+    _feedReaders(text) {
+      for (const r of this._readers) {
+        r.text += text;
+        let m, consumed = 0;
+        r.re.lastIndex = 0;
+        while ((m = r.re.exec(r.text)) !== null) {
+          consumed = r.re.lastIndex;
+          try { r.fn(m.slice(1).map(Number)); } catch (e) { console.error(e); }
+          if (m[0] === "") r.re.lastIndex++;               // a pattern that can match nothing must still advance
+        }
+        r.text = r.text.slice(consumed).slice(-200);      // keep a possible partial reading, but never grow forever
+      }
+    }
+
     _onMessage(msg) {
       this._emit("message", msg);
       // Anyone waiting for this kind of response?
@@ -426,6 +469,7 @@ const SpikeBLE = (() => {
 
       if (msg.type === "ConsoleNotification") {
         this._emit("console", msg.text);
+        this._feedReaders(msg.text);
         this._lineBuffer += msg.text;
         const lines = this._lineBuffer.split(/\r?\n/);
         this._lineBuffer = lines.pop();               // last piece may be an unfinished line
@@ -438,7 +482,7 @@ const SpikeBLE = (() => {
     }
   }
 
-  return { SERVICE_UUID, RX_UUID, TX_UUID, MSG, MSG_NAME, PORT_NAMES,
+  return { VERSION, SERVICE_UUID, RX_UUID, TX_UUID, MSG, MSG_NAME, PORT_NAMES,
            cobsEncode, cobsDecode, pack, unpack, crc32,
            build, parseMessage, parseDeviceRecords, SpikeHub };
 })();

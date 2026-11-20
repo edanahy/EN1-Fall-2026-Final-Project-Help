@@ -33,9 +33,10 @@ FIRE_SENSOR = port.C        # press to shoot
 INTERVAL_MS = 50            # wait between readings (50 ms = 20 readings per second)
 # -----------------------------------------------------------------------------
 
-# NOTE: we do NOT reset the motor positions to 0 here on purpose. That way, if
-# you restart this program, the numbers keep their old meaning and the
-# calibration you did in the web page is still valid.
+# NOTE: we do NOT reset the motor positions to 0 here on purpose. The idea is that
+# if you restart this program, the numbers keep their old meaning and the
+# calibration you did in the web page stays valid (if the numbers jump after a
+# restart, just calibrate again).
 
 
 async def main():

@@ -52,7 +52,7 @@ If a direction is backwards, just calibrate "LEFT" and "RIGHT" the other way rou
 ## What to look at
 
 - [hub_stream.py](hub_stream.py): the whole hub side, about 15 lines of real code.
-- [app.js](app.js): `PACKET_RE` (parsing the hub's text), `fraction()` and `readInputs()` (calibration math, the heart of the project), `DEFAULT_CALIBRATION`.
+- [app.js](app.js): `PACKET_RE` (parsing the hub's text; `spikeble.js` 1.1+ also has `hub.onReading()` that does this buffering for you), `fraction()` and `readInputs()` (calibration math, the heart of the project), `DEFAULT_CALIBRATION`.
 - [game.js](game.js): `update()` (the rules) and the settings at the top. Its only input is `getInputs(playerIndex)`.
 - [index.html](index.html) / [app.js](app.js): the `#app` wrapper and `applyRotation()` implement **Rotate screen** (a CSS rotation of the whole interface).
 - [spikeble.js](spikeble.js): the Bluetooth protocol. Copied from the `web-bt` project; read `web-bt/PROTOCOL.md` if you want to know how it works.
@@ -69,7 +69,7 @@ If a direction is backwards, just calibrate "LEFT" and "RIGHT" the other way rou
 
 - One player only; no lives, no game over, no sound, deliberately plain graphics. The arena stretches to fill whatever shape the window is (the game is always 1000 units tall; the width follows the screen).
 - Tested end to end with a real hub by the instructor (connect, streaming, calibration, play). The framing code was also tested against LEGO's published test vectors, and the page in Chrome with simulated hub messages (including text split across messages).
-- `hub_stream.py` does not reset the motor positions, so calibration survives restarting the program (but not a hub restart: re-calibrate after a power cycle).
+- `hub_stream.py` does not reset the motor positions, so calibration should survive restarting the program (not specifically tested; re-calibrate after a hub power cycle or if the numbers jump).
 - Calibration is saved in this browser only (`localStorage`).
 - Hub API used (checked against the SPIKE 3 Python docs): `motor.relative_position(port)`, `force_sensor.force(port)` (0-100 decinewtons), `runloop.run`, `runloop.sleep_ms`. The `runloop` details were the least confirmed.
 
